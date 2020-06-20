@@ -1,0 +1,18 @@
+
+type: lidar
+car: j7-00006
+date: "20191018"
+sensor_name: lidar
+sensor_id: 40
+#  calibration using :/home/cooper/bags/j7-6/front/20191018T103254_j7-00006_manual_0.bag,/home/cooper/bags/j7-6/front/20191018T103254_j7-00006_manual_1.bag
+preprocess_imu: 0
+
+#Tr_lidar_to_imu
+Tr_lidar_to_imu:
+    rows: 4
+    cols: 4
+    dt: d
+    data: [ 0.997893, 0.064430, 0.007670, 4.762976,
+      -0.064443, 0.997920, 0.001486, 0.165701,
+      -0.007558, -0.001978, 0.999969, 2.770000,
+      0.000000, 0.000000, 0.000000, 1.000000 ]

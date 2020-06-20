@@ -1,0 +1,18 @@
+
+type: lidar
+car: volvo-jueying
+date: "20190201"
+sensor_name: lidar
+sensor_id: 32
+#  calibration using :
+preprocess_imu: 0
+
+#Tr_lidar_to_imu
+Tr_lidar_to_imu:
+    rows: 4
+    cols: 4
+    dt: d
+    data: [ 0.997494, 0.024635, 0.066320, 3.781855,
+      -0.024971, 0.999679, 0.004251, 0.199937,
+      -0.066194, -0.005897, 0.997789, 3.861868,
+      0.000000, 0.000000, 0.000000, 1.000000 ]
