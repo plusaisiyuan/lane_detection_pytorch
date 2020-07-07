@@ -171,18 +171,23 @@ class Lane_exist(nn.Module):
 
 
 class ERFNet(nn.Module):
-    def __init__(self, num_cls, num_ego, encoder=None):  # use encoder to pass pretrained encoder
+    def __init__(self, num_cls=0, num_ego=0, encoder=None):  # use encoder to pass pretrained encoder
         super(ERFNet, self).__init__()
 
+        self.num_cls = num_cls
+        self.num_ego = num_ego
         if (encoder == None):
-            self.encoder = Encoder(num_ego+1)
+            # self.encoder = Encoder(num_ego+1)
+            self.encoder = Encoder(self.num_cls)
         else:
             self.encoder = encoder
         # self.decoder_cls = Decoder(num_cls)
         # self.decoder_ego = Decoder(num_ego+1)
-        self.decoder_addition = Decoder(num_cls)
-        self.decoder = Decoder(num_ego+1)
-        self.lane_exist = Lane_exist(num_ego)
+        if self.num_cls:
+            self.decoder_addition = Decoder(num_cls)
+        if self.num_ego:
+            self.decoder = Decoder(num_ego+1)
+            self.lane_exist = Lane_exist(num_ego)
 
     def train(self, mode=True):
         """
@@ -269,5 +274,9 @@ class ERFNet(nn.Module):
             return self.encoder.forward(input, predict=True)
         else:'''
         output = self.encoder(input)  # predict=False by default
-        return self.decoder_addition.forward(output), self.decoder.forward(output), self.lane_exist(output)
-
+        if self.num_cls and self.num_ego:
+            return self.decoder_addition.forward(output), self.decoder.forward(output), self.lane_exist(output)
+        if self.num_cls and self.num_ego == 0:
+            return self.decoder_addition.forward(output)
+        if self.num_cls == 0 and self.num_ego:
+            return self.decoder.forward(output), self.lane_exist(output)

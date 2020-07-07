@@ -66,12 +66,22 @@ def create_onnx_model(args):
     net = load_model()
     net.eval()
 
-    output_onnx = args.output_onnx
-    print("==> Exporting model to ONNX format at '{}'".format(output_onnx))
+    onnx_file = args.onnx_file
+    print("==> Exporting model to ONNX format at '{}'".format(onnx_file))
     input_names = ["input"]
-    output_names = ["output_alllane", "output_4lane", "output_exist"]
+    if cfg.NUM_CLASSES and cfg.NUM_EGO:
+        output_names = ["output/cls", "output/ego", "output/exist"]
+    elif cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+        output_names = ["output/cls"]
+    elif cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+        output_names = ["output/ego", "output/exist"]
+    torch_in = torch.randn(1, 3, cfg.MODEL_INPUT_HEIGHT, cfg.MODEL_INPUT_WIDTH, device='cuda')
 
-    torch_in = torch.randn(1, 3, 256, 512, device='cuda')
+    from thop import profile
+    flops, params = profile(net, inputs=(torch_in,))
+    from thop import clever_format
+    macs, params = clever_format([flops, params], "%.3f")
+    print(macs, params, flops)
 
     with torch.no_grad():
         with io.BytesIO() as f:
@@ -90,7 +100,10 @@ def create_onnx_model(args):
     assert all(p in all_passes for p in passes)
     onnx_model = optimizer.optimize(onnx_model, passes)
 
-    onnx.save(onnx_model, output_onnx)
+    onnx.save(onnx_model, onnx_file)
+
+    # import netron
+    # netron.start(onnx_file)
 
     return torch_in, torch_out
 
@@ -112,7 +125,7 @@ def validate_model(args, model_in, model_out):
 
     for i in range(len(ort_outs)):
         print(ort_outs[i].shape)
-        np.testing.assert_allclose(to_numpy(model_out[i]),
+        np.testing.assert_allclose(to_numpy(model_out),
                                    ort_outs[i],
                                    rtol=1e-03,
                                    atol=1e-05)

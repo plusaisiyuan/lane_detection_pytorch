@@ -48,6 +48,11 @@ def main():
     model = net.ERFNet(num_class, num_ego)
     model = torch.nn.DataParallel(model, device_ids=range(len(cfg.gpus))).cuda()
 
+    if num_class:
+        print(("=> train'{}' model".format('lane_cls')))
+    if num_ego:
+        print(("=> train'{}' model".format('lane_ego')))
+
     def load_my_state_dict(model, state_dict):  # custom function to load model when not all dict elements
         own_state = model.state_dict()
         ckpt_name = []
@@ -79,7 +84,7 @@ def main():
     train_loader = torch.utils.data.DataLoader(
         getattr(ds, 'VOCAugDataSet')(dataset_path=cfg.dataset_path, data_list=cfg.train_list, transform=torchvision.transforms.Compose([
             tf.GroupRandomScale(size=(0.695, 0.721),
-                                interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
+                                interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
             tf.GroupRandomCropRatio(size=(cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT)),
             tf.GroupRandomRotation(degree=(-1, 1),
                                    interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST),
@@ -90,7 +95,7 @@ def main():
     val_loader = torch.utils.data.DataLoader(
         getattr(ds, 'VOCAugDataSet')(dataset_path=cfg.dataset_path, data_list=cfg.val_list, transform=torchvision.transforms.Compose([
             tf.GroupRandomScale(size=(0.695, 0.721),
-                                interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
+                                interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
             tf.GroupRandomCropRatio(size=(cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT)),
             tf.GroupNormalize(mean=(cfg.INPUT_MEAN, (0,), (0,)), std=(cfg.INPUT_STD, (1,), (1,))),
         ])), batch_size=cfg.val_batch_size, shuffle=False, num_workers=args.workers, pin_memory=False)
@@ -104,7 +109,11 @@ def main():
     criterion_ego = torch.nn.NLLLoss(ignore_index=ignore_label, weight=ego_weights).cuda()
     criterion_exist = torch.nn.BCELoss().cuda()
     optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
-    evaluator = EvalSegmentation(num_ego+1, ignore_label)
+    if num_class:
+        evaluator = EvalSegmentation(num_class, ignore_label)
+    if num_ego:
+        evaluator = EvalSegmentation(num_ego+1, ignore_label)
+
 
     # Tensorboard writer
     global writer
@@ -121,7 +130,10 @@ def main():
             mIoU_cls, mIoU_ego = validate(val_loader, model, criterion_cls, criterion_ego, criterion_exist, epoch,
                                           evaluator, writer)
             # remember best mIoU and save checkpoint
-            is_best = mIoU_ego > best_mIoU_ego
+            if num_class:
+                is_best = mIoU_cls > best_mIoU_cls
+            if num_ego:
+                is_best = mIoU_ego > best_mIoU_ego
             best_mIoU_cls = max(mIoU_cls, best_mIoU_cls)
             best_mIoU_ego = max(mIoU_ego, best_mIoU_ego)
             save_checkpoint({
@@ -152,31 +164,41 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
     for i, (input, target_cls, target_ego, target_exist) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
-
-        target_cls = target_cls.cuda()
-        target_ego = target_ego.cuda()
-        target_exist = target_exist.float().cuda()
         input_var = torch.autograd.Variable(input)
-        target_cls_var = torch.autograd.Variable(target_cls)
-        target_ego_var = torch.autograd.Variable(target_ego)
-        target_exist_var = torch.autograd.Variable(target_exist)
 
         # compute output
-        output_cls, output_ego, output_exist = model(input_var)  # output_mid
-        loss_cls = criterion_cls(torch.log(output_cls), target_cls_var)
-        loss_ego = criterion_ego(torch.log(output_ego), target_ego_var)
-        loss_exist = criterion_exist(output_exist, target_exist_var)
-        loss_tot = loss_cls + loss_ego + loss_exist * 0.1
+        if cfg.NUM_CLASSES and cfg.NUM_EGO:
+            output_cls, output_ego, output_exist = model(input_var)  # output_mid
+        if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+            output_cls = model(input_var)  # output_mid
+        if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+            output_ego, output_exist = model(input_var) # output_mid
 
-        # measure accuracy and record loss
-        losses_cls.update(loss_cls.data.item(), input.size(0))
-        losses_ego.update(loss_ego.data.item(), input.size(0))
-        losses_exist.update(loss_exist.item(), input.size(0))
+        loss_tot = 0
+        if cfg.NUM_CLASSES:
+            target_cls = target_cls.cuda()
+            target_cls_var = torch.autograd.Variable(target_cls)
+            loss_cls = criterion_cls(torch.log(output_cls), target_cls_var)
+            loss_tot += loss_cls
 
-        loss_cls_avg += loss_cls.data.item()
-        loss_ego_avg += loss_ego.data.item()
-        loss_exist_avg += loss_exist.item()
-        loss_tot_avg += loss_cls.data.item() + loss_ego.data.item() + loss_exist.item() * 0.1
+            loss_cls_avg += loss_cls.data.item()
+            # measure accuracy and record loss
+            losses_cls.update(loss_cls.data.item(), input.size(0))
+        if cfg.NUM_EGO:
+            target_ego = target_ego.cuda()
+            target_exist = target_exist.float().cuda()
+            target_ego_var = torch.autograd.Variable(target_ego)
+            target_exist_var = torch.autograd.Variable(target_exist)
+            loss_ego = criterion_ego(torch.log(output_ego), target_ego_var)
+            loss_exist = criterion_exist(output_exist, target_exist_var)
+            loss_tot += loss_ego + loss_exist * 0.1
+
+            loss_ego_avg += loss_ego.data.item()
+            loss_exist_avg += loss_exist.item()
+            # measure accuracy and record loss
+            losses_ego.update(loss_ego.data.item(), input.size(0))
+            losses_exist.update(loss_exist.item(), input.size(0))
+        loss_tot_avg += loss_tot.data.item()
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -188,19 +210,36 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
         end = time.time()
 
         if (i + 1) % cfg.print_freq == 0:
-            print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 
-                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t' 
-                   'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Loss_exist {loss_exist.val:.4f} ({loss_exist.avg:.4f})\t'
-                .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time, loss_cls=losses_cls, loss_ego=losses_ego,
-                        loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
+            if cfg.NUM_CLASSES and cfg.NUM_EGO:
+                print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
+                       'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Loss_exist {loss_exist.val:.4f} ({loss_exist.avg:.4f})\t'
+                       .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time,
+                               loss_cls=losses_cls, loss_ego=losses_ego,
+                               loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
+            if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+                print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
+                       .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time,
+                               loss_cls=losses_cls, lr=optimizer.param_groups[-1]['lr'])))
+            if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+                output_ego, output_exist = model(input_var)  # output_mid
+                print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'  
+                       'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Loss_exist {loss_exist.val:.4f} ({loss_exist.avg:.4f})\t'
+                    .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time, loss_ego=losses_ego,
+                            loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
             batch_time.reset()
             data_time.reset()
             losses_cls.reset()
             losses_ego.reset()
             losses_exist.reset()
-    writer.add_scalars('Loss_cls', {'Training': loss_cls_avg / len(train_loader)}, epoch)
-    writer.add_scalars('Loss_ego', {'Training': loss_ego_avg / len(train_loader)}, epoch)
-    writer.add_scalars('Loss_exist', {'Training': loss_exist_avg / len(train_loader)}, epoch)
+
+    if cfg.NUM_CLASSES:
+        writer.add_scalars('Loss_cls', {'Training': loss_cls_avg / len(train_loader)}, epoch)
+    if cfg.NUM_EGO:
+        writer.add_scalars('Loss_ego', {'Training': loss_ego_avg / len(train_loader)}, epoch)
+        writer.add_scalars('Loss_exist', {'Training': loss_exist_avg / len(train_loader)}, epoch)
     writer.add_scalars('Loss_tot', {'Training': loss_tot_avg / len(train_loader)}, epoch)
 
 def flip(x, dim):
@@ -229,71 +268,115 @@ def validate(val_loader, model, criterion_cls, criterion_ego, criterion_exist, i
     loss_exist_avg = 0
     loss_tot_avg = 0
     for i, (input, target_cls, target_ego, target_exist) in enumerate(val_loader):
-        target_cls = target_cls.cuda()
-        target_ego = target_ego.cuda()
-        target_exist = target_exist.float().cuda()
         input_var = torch.autograd.Variable(input, volatile=True)
-        target_cls_var = torch.autograd.Variable(target_cls)
-        target_ego_var = torch.autograd.Variable(target_ego)
-        target_exist_var = torch.autograd.Variable(target_exist)
 
         # compute output
-        output_cls, output_ego, output_exist = model(input_var)
-        loss_cls = criterion_cls(torch.log(output_cls), target_cls_var)
-        loss_ego = criterion_ego(torch.log(output_ego), target_ego_var)
-        loss_exist = criterion_exist(output_exist, target_exist_var)
+        if cfg.NUM_CLASSES and cfg.NUM_EGO:
+            output_cls, output_ego, output_exist = model(input_var)  # output_mid
+        if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+            output_cls = model(input_var)  # output_mid
+        if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+            output_ego, output_exist = model(input_var)  # output_mid
 
-        # measure accuracy and record loss
-        pred_cls = output_cls.data.cpu().numpy().transpose(0, 2, 3, 1)
-        pred_cls = np.argmax(pred_cls, axis=3).astype(np.uint8)
-        pred_ego = output_ego.data.cpu().numpy().transpose(0, 2, 3, 1)
-        pred_ego = np.argmax(pred_ego, axis=3).astype(np.uint8)
-        IoU_cls.update(evaluator(pred_cls, target_cls.cpu().numpy()))
-        IoU_ego.update(evaluator(pred_ego, target_ego.cpu().numpy()))
-        losses_cls.update(loss_cls.data.item(), input.size(0))
-        losses_ego.update(loss_ego.data.item(), input.size(0))
+        if cfg.NUM_CLASSES:
+            target_cls = target_cls.cuda()
+            target_cls_var = torch.autograd.Variable(target_cls)
+            # measure accuracy and record loss
+            pred_cls = output_cls.data.cpu().numpy().transpose(0, 2, 3, 1)
+            pred_cls = np.argmax(pred_cls, axis=3).astype(np.uint8)
+            loss_cls = criterion_cls(torch.log(output_cls), target_cls_var)
+            IoU_cls.update(evaluator(pred_cls, target_cls.cpu().numpy()))
+            losses_cls.update(loss_cls.data.item(), input.size(0))
+            loss_cls_avg += loss_cls.data.item()
+            loss_tot_avg += loss_cls.data.item()
+        if cfg.NUM_EGO:
+            target_ego = target_ego.cuda()
+            target_exist = target_exist.float().cuda()
+            target_ego_var = torch.autograd.Variable(target_ego)
+            target_exist_var = torch.autograd.Variable(target_exist)
+            # measure accuracy and record loss
+            pred_ego = output_ego.data.cpu().numpy().transpose(0, 2, 3, 1)
+            pred_ego = np.argmax(pred_ego, axis=3).astype(np.uint8)
+            loss_ego = criterion_ego(torch.log(output_ego), target_ego_var)
+            loss_exist = criterion_exist(output_exist, target_exist_var)
+            IoU_ego.update(evaluator(pred_ego, target_ego.cpu().numpy()))
+            losses_ego.update(loss_ego.data.item(), input.size(0))
+            loss_ego_avg += loss_ego.data.item()
+            loss_exist_avg += loss_exist.item()
+            loss_tot_avg += lloss_ego.data.item() + loss_exist.item() * 0.1
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        loss_cls_avg += loss_cls.data.item()
-        loss_ego_avg += loss_ego.data.item()
-        loss_exist_avg += loss_exist.item()
-        loss_tot_avg += loss_cls.data.item() + loss_ego.data.item() + loss_exist.item() * 0.1
+
+
+
 
         if (i + 1) % cfg.print_freq == 0:
-            acc_cls = np.sum(np.diag(IoU_cls.sum)) / float(np.sum(IoU_cls.sum))
-            mIoU_cls = np.diag(IoU_cls.sum) / (1e-20 + IoU_cls.sum.sum(1) + IoU_cls.sum.sum(0) - np.diag(IoU_cls.sum))
-            mIoU_cls = np.sum(mIoU_cls) / len(mIoU_cls)
+            if cfg.NUM_CLASSES:
+                acc_cls = np.sum(np.diag(IoU_cls.sum)) / float(np.sum(IoU_cls.sum))
+                mIoU_cls = np.diag(IoU_cls.sum) / (1e-20 + IoU_cls.sum.sum(1) + IoU_cls.sum.sum(0) - np.diag(IoU_cls.sum))
+                mIoU_cls = np.sum(mIoU_cls) / len(mIoU_cls)
+            if cfg.NUM_EGO:
+                acc_ego = np.sum(np.diag(IoU_ego.sum)) / float(np.sum(IoU_ego.sum))
+                mIoU_ego = np.diag(IoU_ego.sum) / (1e-20 + IoU_ego.sum.sum(1) + IoU_ego.sum.sum(0) - np.diag(IoU_ego.sum))
+                mIoU_ego = np.sum(mIoU_ego) / len(mIoU_ego)
+            if cfg.NUM_CLASSES and cfg.NUM_EGO:
+                print((
+                          'Test: [{0}/{1}]\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} '
+                          '({loss_cls.avg:.4f})\t' 'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Pixels Acc_cls {acc_cls:.3f}\t'
+                          'Pixels Acc_ego {acc_ego:.3f}\t' 'mIoU_cls {mIoU_cls:.3f}\t' 'mIoU_ego {mIoU_ego:.3f}'
+                          .format(i, len(val_loader), batch_time=batch_time, loss_cls=losses_cls, loss_ego=losses_ego,
+                                  acc_cls=acc_cls, acc_ego=acc_ego, mIoU_cls=mIoU_cls, mIoU_ego=mIoU_ego)))
+            if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+                print((
+                          'Test: [{0}/{1}]\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} '
+                          '({loss_cls.avg:.4f})\t' 'Pixels Acc_cls {acc_cls:.3f}\t' 'mIoU_cls {mIoU_cls:.3f}\t'
+                          .format(i, len(val_loader), batch_time=batch_time, loss_cls=losses_cls,
+                                  acc_cls=acc_cls, mIoU_cls=mIoU_cls)))
+            if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+                print((
+                    'Test: [{0}/{1}]\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t'                   
+                    'Pixels Acc_ego {acc_ego:.3f}\t' 'mIoU_ego {mIoU_ego:.3f}'
+                        .format(i, len(val_loader), batch_time=batch_time, loss_ego=losses_ego,
+                                acc_ego=acc_ego, mIoU_ego=mIoU_ego)))
 
-            acc_ego = np.sum(np.diag(IoU_ego.sum)) / float(np.sum(IoU_ego.sum))
-            mIoU_ego = np.diag(IoU_ego.sum) / (1e-20 + IoU_ego.sum.sum(1) + IoU_ego.sum.sum(0) - np.diag(IoU_ego.sum))
-            mIoU_ego = np.sum(mIoU_ego) / len(mIoU_ego)
-            print(('Test: [{0}/{1}]\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} '
-                   '({loss_cls.avg:.4f})\t' 'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Pixels Acc_cls {acc_cls:.3f}\t' 
-                   'Pixels Acc_ego {acc_ego:.3f}\t' 'mIoU_cls {mIoU_cls:.3f}\t' 'mIoU_ego {mIoU_ego:.3f}'
-                   .format(i, len(val_loader), batch_time=batch_time, loss_cls=losses_cls, loss_ego=losses_ego,
-                           acc_cls=acc_cls, acc_ego=acc_ego, mIoU_cls=mIoU_cls, mIoU_ego=mIoU_ego)))
-
-    acc_cls = np.sum(np.diag(IoU_cls.sum)) / float(np.sum(IoU_cls.sum))
-    mIoU_cls = np.diag(IoU_cls.sum) / (1e-20 + IoU_cls.sum.sum(1) + IoU_cls.sum.sum(0) - np.diag(IoU_cls.sum))
-    mIoU_cls = np.sum(mIoU_cls) / len(mIoU_cls)
-    acc_ego = np.sum(np.diag(IoU_ego.sum)) / float(np.sum(IoU_ego.sum))
-    mIoU_ego = np.diag(IoU_ego.sum) / (1e-20 + IoU_ego.sum.sum(1) + IoU_ego.sum.sum(0) - np.diag(IoU_ego.sum))
-    mIoU_ego = np.sum(mIoU_ego) / len(mIoU_ego)
-    writer.add_scalars('Pixels Acc_cls', {'Validation': acc_cls}, iter)
-    writer.add_scalars('mIoU_cls', {'Validation': mIoU_cls}, iter)
-    writer.add_scalars('Pixels Acc_ego', {'Validation': acc_ego}, iter)
-    writer.add_scalars('mIoU_ego', {'Validation': mIoU_ego}, iter)
-    writer.add_scalars('Loss_cls', {'Validation': loss_cls_avg/len(val_loader)}, iter)
-    writer.add_scalars('Loss_ego', {'Validation': loss_ego_avg/len(val_loader)}, iter)
-    writer.add_scalars('Loss_exist', {'Validation': loss_exist_avg / len(val_loader)}, iter)
+    mIoU_cls = 0
+    mIoU_ego = 0
+    if cfg.NUM_CLASSES:
+        acc_cls = np.sum(np.diag(IoU_cls.sum)) / float(np.sum(IoU_cls.sum))
+        mIoU_cls = np.diag(IoU_cls.sum) / (1e-20 + IoU_cls.sum.sum(1) + IoU_cls.sum.sum(0) - np.diag(IoU_cls.sum))
+        mIoU_cls = np.sum(mIoU_cls) / len(mIoU_cls)
+        writer.add_scalars('Pixels Acc_cls', {'Validation': acc_cls}, iter)
+        writer.add_scalars('mIoU_cls', {'Validation': mIoU_cls}, iter)
+        writer.add_scalars('Loss_cls', {'Validation': loss_cls_avg / len(val_loader)}, iter)
+    if cfg.NUM_EGO:
+        acc_ego = np.sum(np.diag(IoU_ego.sum)) / float(np.sum(IoU_ego.sum))
+        mIoU_ego = np.diag(IoU_ego.sum) / (1e-20 + IoU_ego.sum.sum(1) + IoU_ego.sum.sum(0) - np.diag(IoU_ego.sum))
+        mIoU_ego = np.sum(mIoU_ego) / len(mIoU_ego)
+        writer.add_scalars('Pixels Acc_ego', {'Validation': acc_ego}, iter)
+        writer.add_scalars('mIoU_ego', {'Validation': mIoU_ego}, iter)
+        writer.add_scalars('Loss_ego', {'Validation': loss_ego_avg/len(val_loader)}, iter)
+        writer.add_scalars('Loss_exist', {'Validation': loss_exist_avg / len(val_loader)}, iter)
     writer.add_scalars('Loss_tot', {'Validation': loss_tot_avg / len(val_loader)}, iter)
-    print(('Testing Results: Pixels Acc_cls {acc_cls:.3f}\tmIoU_cls {mIoU_cls:.3f} ({bestmIoU_cls:.4f})\t'
-           'Loss_cls {loss_cls.avg:.5f}\tPixels Acc_ego {acc_ego:.3f}\tmIoU_ego {mIoU_ego:.3f} ({bestmIoU_ego:.4f})\t'
-           'Loss_ego {loss_ego.avg:.5f}'
-           .format(acc_cls=acc_cls, mIoU_cls=mIoU_cls, bestmIoU_cls=max(mIoU_cls, best_mIoU_cls), loss_cls=losses_cls,
-                   acc_ego=acc_ego, mIoU_ego=mIoU_ego, bestmIoU_ego=max(mIoU_ego, best_mIoU_ego), loss_ego=losses_ego)))
+    if cfg.NUM_CLASSES and cfg.NUM_EGO:
+        print(('Testing Results: Pixels Acc_cls {acc_cls:.3f}\tmIoU_cls {mIoU_cls:.3f} ({bestmIoU_cls:.4f})\t'
+               'Loss_cls {loss_cls.avg:.5f}\tPixels Acc_ego {acc_ego:.3f}\tmIoU_ego {mIoU_ego:.3f} ({bestmIoU_ego:.4f})\t'
+               'Loss_ego {loss_ego.avg:.5f}'
+               .format(acc_cls=acc_cls, mIoU_cls=mIoU_cls, bestmIoU_cls=max(mIoU_cls, best_mIoU_cls),
+                       loss_cls=losses_cls,
+                       acc_ego=acc_ego, mIoU_ego=mIoU_ego, bestmIoU_ego=max(mIoU_ego, best_mIoU_ego),
+                       loss_ego=losses_ego)))
+    if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
+        print(('Testing Results: Pixels Acc_cls {acc_cls:.3f}\tmIoU_cls {mIoU_cls:.3f} ({bestmIoU_cls:.4f})\t'
+               'Loss_cls {loss_cls.avg:.5f}\t'
+               .format(acc_cls=acc_cls, mIoU_cls=mIoU_cls, bestmIoU_cls=max(mIoU_cls, best_mIoU_cls),
+                       loss_cls=losses_cls)))
+    if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
+        print(('Testing Results: Pixels Acc_ego {acc_ego:.3f}\tmIoU_ego {mIoU_ego:.3f} ({bestmIoU_ego:.4f})\t'
+               'Loss_ego {loss_ego.avg:.5f}'
+               .format(acc_ego=acc_ego, mIoU_ego=mIoU_ego, bestmIoU_ego=max(mIoU_ego, best_mIoU_ego),
+                       loss_ego=losses_ego)))
 
     return mIoU_cls, mIoU_ego
 
@@ -350,10 +433,10 @@ class EvalSegmentation(object):
 
 def adjust_learning_rate(optimizer, epoch, lr_steps):
 
-    # decay = ((1 - float(epoch) / cfg.epochs)**(0.9))
+    decay = ((1 - float(epoch) / cfg.epochs)**(0.9))
     # if decay < 1e-1:
     #     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
-    decay = 0.1**(sum(epoch >= np.array(lr_steps)))
+    # decay = 0.1**(sum(epoch >= np.array(lr_steps)))
     lr = cfg.lr * decay
     decay = cfg.weight_decay
     

@@ -27,30 +27,38 @@ class VOCAugDataSet(Dataset):
                 self.img_list.append(dataset_path + line.strip().split(" ")[0])
 
                 if not self.is_testing:
-                    self.label_list.append(dataset_path + line.strip().split(" ")[1])
-                    self.seglabel_list.append(dataset_path + line.strip().split(" ")[2])
-                    self.exist_list.append(np.array([cfg.ego_mapping[int(line.strip().split(" ")[3])], cfg.ego_mapping[int(line.strip().split(" ")[4])], cfg.ego_mapping[int(line.strip().split(" ")[5])], cfg.ego_mapping[int(line.strip().split(" ")[6])]]))
-
+                    if cfg.NUM_CLASSES:
+                        self.label_list.append(dataset_path + line.strip().split(" ")[1])
+                    if cfg.NUM_EGO:
+                        self.seglabel_list.append(dataset_path + line.strip().split(" ")[2])
+                        self.exist_list.append(np.array([cfg.ego_mapping[int(line.strip().split(" ")[3])], cfg.ego_mapping[int(line.strip().split(" ")[4])], cfg.ego_mapping[int(line.strip().split(" ")[5])], cfg.ego_mapping[int(line.strip().split(" ")[6])]]))
     def __len__(self):
         return len(self.img_list)
 
     def __getitem__(self, idx):
         image = cv2.imread(os.path.join(self.img_path, self.img_list[idx])).astype(np.float32)
         image = cv2.resize(image, (cfg.LOAD_IMAGE_WIDTH, cfg.LOAD_IMAGE_HEIGHT), interpolation=cv2.INTER_NEAREST)
-        image = image[80:, :, :]
+        image = image[cfg.VERTICAL_CROP_SIZE:, :, :]
         if not self.is_testing:
-            label = cv2.imread(os.path.join(self.gt_path, self.label_list[idx]), cv2.IMREAD_UNCHANGED)
-            label = cv2.resize(label, (cfg.LOAD_IMAGE_WIDTH, cfg.LOAD_IMAGE_HEIGHT), interpolation=cv2.INTER_NEAREST)
-            label = label[80:, :]
-            for i in range(len(cfg.cls_mapping)):
-                if i != cfg.cls_mapping[i]:
-                    label[label == i] = cfg.cls_mapping[i]
+            if cfg.NUM_CLASSES:
+                label = cv2.imread(os.path.join(self.gt_path, self.label_list[idx]), cv2.IMREAD_UNCHANGED)
+                label = cv2.resize(label, (cfg.LOAD_IMAGE_WIDTH, cfg.LOAD_IMAGE_HEIGHT), interpolation=cv2.INTER_NEAREST)
+                label = label[cfg.VERTICAL_CROP_SIZE:, :]
+                for i in range(len(cfg.cls_mapping)):
+                    if i != cfg.cls_mapping[i]:
+                        label[label == i] = cfg.cls_mapping[i]
+            else:
+                label = np.zeros((image.shape[0], image.shape[1]))
             label = label.squeeze()
-            seglabel = cv2.imread(os.path.join(self.gt_path, self.seglabel_list[idx]), cv2.IMREAD_UNCHANGED)
-            seglabel = cv2.resize(seglabel, (cfg.LOAD_IMAGE_WIDTH, cfg.LOAD_IMAGE_HEIGHT), interpolation=cv2.INTER_NEAREST)
-            seglabel = seglabel[80:, :]
-            seglabel = seglabel.squeeze()
-            exist = self.exist_list[idx]
+            if cfg.NUM_EGO:
+                seglabel = cv2.imread(os.path.join(self.gt_path, self.seglabel_list[idx]), cv2.IMREAD_UNCHANGED)
+                seglabel = cv2.resize(seglabel, (cfg.LOAD_IMAGE_WIDTH, cfg.LOAD_IMAGE_HEIGHT), interpolation=cv2.INTER_NEAREST)
+                seglabel = seglabel[cfg.VERTICAL_CROP_SIZE:, :]
+                seglabel = seglabel.squeeze()
+                exist = self.exist_list[idx]
+            else:
+                seglabel = np.zeros((image.shape[0], image.shape[1]))
+                exist = []
 
         if self.transform:
             if self.is_testing:

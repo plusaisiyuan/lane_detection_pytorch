@@ -7,11 +7,11 @@ import numpy as np
 import sensor_msgs.point_cloud2
 import cv2
 from cv_bridge import CvBridge
-# from tf.transformations import *
+from tf.transformations import *
 import os
 from options.config import cfg
 from options.options import parser
-# from demo import load_model, infer_model
+from demo import load_model, infer_model
 from conf.sensor_config import unwarp
 
 bridge = CvBridge()
@@ -364,166 +364,165 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
         sys.stdout.flush()
 
         left_orig_image, right_orig_image, left_timestamp, right_timestamp = msg_to_png(m, cam_topics)
-        cv2.imwrite(os.path.join(output_dir, "#usb_cam_left#image_raw#compressed_%.3f.png" % (left_timestamp)), left_orig_image)
-        # velo = msg_to_velo(m, velo_topics)
-        # left_image, right_image, P1, P2, Tr_cam_to_imu, Tr_lidar_to_imu = unwarp(left_orig_image, right_orig_image, car_name, date)
-        # merged = np.concatenate([left_image, right_image], axis=1)
-        # cv2.imwrite(os.path.join(output_dir, "%.3f_unwarp.png" % (left_timestamp)), merged)
-        #
-        # result_cls_left, result_ego_left, disp_left, lines_left, latency_left = infer_model(model, left_image)
-        # result_cls_right, result_ego_right, disp_right, lines_right, latency_right = infer_model(model, right_image)
-        #
-        # h, w = result_ego_left.shape
-        # result_cls_left_color = np.zeros((h, w, 3)).astype(np.uint8)
-        # result_cls_right_color = np.zeros((h, w, 3)).astype(np.uint8)
-        # result_ego_left_color = np.zeros((h, w, 3)).astype(np.uint8)
-        # result_ego_right_color = np.zeros((h, w, 3)).astype(np.uint8)
-        # for i in range(h):
-        #     for j in range(w):
-        #         if result_cls_left[i, j] != 0:
-        #             result_cls_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_left[i, j]-1]
-        #         if result_cls_right[i, j] != 0:
-        #             result_cls_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_right[i, j]]
-        #         if result_ego_left[i, j] != 0:
-        #             result_ego_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_left[i, j]]
-        #         if result_ego_right[i, j] != 0:
-        #             result_ego_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_right[i, j]]
-        #
-        # result_cls_merged = np.concatenate([result_cls_left, result_cls_right], axis=1)
-        # result_ego_merged = np.concatenate([result_ego_left, result_ego_right], axis=1)
-        # result_cls_color_merged = np.concatenate([result_cls_left_color, result_cls_right_color], axis=1)
-        # result_ego_color_merged = np.concatenate([result_ego_left_color, result_ego_right_color], axis=1)
-        # disp_merged = np.concatenate([disp_left, disp_right], axis=1)
-        #
-        # cv2.imwrite(os.path.join(output_dir, "%.3f_cls.png" % (left_timestamp)), result_cls_color_merged * 0.5 + merged * 0.5)
-        # cv2.imwrite(os.path.join(output_dir, "%.3f_ego.png" % (left_timestamp)), result_ego_color_merged * 0.5 + merged * 0.5)
-        # cv2.imwrite(os.path.join(output_dir, "%.3f_points.png" % (left_timestamp)), disp_merged)
-        # Tr_imu_to_world, pose = msg_to_odom(m, odom_topics, left_timestamp)
-        # Tr_cam_to_world = np.matmul(Tr_imu_to_world, Tr_cam_to_imu)
-        # Tr_velo_to_world = np.matmul(Tr_imu_to_world, Tr_lidar_to_imu)
-        #
+        velo = msg_to_velo(m, velo_topics)
+        left_image, right_image, P1, P2, Tr_cam_to_imu, Tr_lidar_to_imu = unwarp(left_orig_image, right_orig_image, car_name, date)
+        merged = np.concatenate([left_image, right_image], axis=1)
+        cv2.imwrite(os.path.join(output_dir, "%.3f_unwarp.png" % (left_timestamp)), merged)
+
+        result_cls_left, result_ego_left, disp_left, lines_left, latency_left = infer_model(model, left_image)
+        result_cls_right, result_ego_right, disp_right, lines_right, latency_right = infer_model(model, right_image)
+
+        h, w = result_ego_left.shape
+        result_cls_left_color = np.zeros((h, w, 3)).astype(np.uint8)
+        result_cls_right_color = np.zeros((h, w, 3)).astype(np.uint8)
+        result_ego_left_color = np.zeros((h, w, 3)).astype(np.uint8)
+        result_ego_right_color = np.zeros((h, w, 3)).astype(np.uint8)
+        for i in range(h):
+            for j in range(w):
+                if result_cls_left[i, j] != 0:
+                    result_cls_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_left[i, j]-1]
+                if result_cls_right[i, j] != 0:
+                    result_cls_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_right[i, j]]
+                if result_ego_left[i, j] != 0:
+                    result_ego_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_left[i, j]]
+                if result_ego_right[i, j] != 0:
+                    result_ego_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_right[i, j]]
+
+        result_cls_merged = np.concatenate([result_cls_left, result_cls_right], axis=1)
+        result_ego_merged = np.concatenate([result_ego_left, result_ego_right], axis=1)
+        result_cls_color_merged = np.concatenate([result_cls_left_color, result_cls_right_color], axis=1)
+        result_ego_color_merged = np.concatenate([result_ego_left_color, result_ego_right_color], axis=1)
+        disp_merged = np.concatenate([disp_left, disp_right], axis=1)
+
+        cv2.imwrite(os.path.join(output_dir, "%.3f_cls.png" % (left_timestamp)), result_cls_color_merged * 0.5 + merged * 0.5)
+        cv2.imwrite(os.path.join(output_dir, "%.3f_ego.png" % (left_timestamp)), result_ego_color_merged * 0.5 + merged * 0.5)
+        cv2.imwrite(os.path.join(output_dir, "%.3f_points.png" % (left_timestamp)), disp_merged)
+        Tr_imu_to_world, pose = msg_to_odom(m, odom_topics, left_timestamp)
+        Tr_cam_to_world = np.matmul(Tr_imu_to_world, Tr_cam_to_imu)
+        Tr_velo_to_world = np.matmul(Tr_imu_to_world, Tr_lidar_to_imu)
+
+        points3d = []
+        colors = []
+        max_depth = 0
+        o = open(os.path.join(output_dir, "%.3f_det.pcd" % (left_timestamp)), "w")
+        for lid in range(len(lines_left)):
+            points3d.append([0, 0, 0, lid])
+        lid_left = lid_right = 0
+        while lid_left < len(lines_left) and lid_right < len(lines_right):
+            # if len(lines_left[lid_left]) == 0 and len(lines_right[lid_right]) > 0 and lid_left == 0 and lid_right == 0:
+            #     lid_left += 1
+            #     continue
+
+            if lid_left < 4 and lid_right < 4:
+                line_left = lines_left[lid_left]
+                line_right = lines_right[lid_right]
+                xl = []
+                yl = []
+                xr = []
+                yr = []
+                if len(line_left) == len(line_right):
+                    for j in range(len(line_left) - 1):
+                        # scale = (len(line_left) - j) / 5
+                        scale = 1
+                        point_left = line_left[j]
+                        point_right = line_right[j]
+                        point_left_temp = line_left[j + 1]
+                        point_right_temp = line_right[j + 1]
+                        if point_left[0] != -1 and point_right[0] != -1 and point_left_temp[0] != -1 and \
+                                point_right_temp[0] != -1:
+                            for i in range(scale):
+                                xl.append(point_left[0] + i * float(point_left_temp[0] - point_left[0]) / scale)
+                                yl.append(point_left[1] + i * float(point_left_temp[1] - point_left[1]) / scale)
+                                xr.append(point_right[0] + i * float(point_right_temp[0] - point_right[0]) / scale)
+                                yr.append(point_right[1] + i * float(point_right_temp[1] - point_right[1]) / scale)
+                    if len(xl) == 0 or len(xr) == 0:
+                        lid_left += 1
+                        lid_right += 1
+                        continue
+                    ptl = np.concatenate(
+                        (np.asarray(xl, dtype=np.float).reshape(1, -1), np.asarray(yl, dtype=np.float).reshape(1, -1)),
+                        axis=0)
+                    ptr = np.concatenate(
+                        (np.asarray(xr, dtype=np.float).reshape(1, -1), np.asarray(yr, dtype=np.float).reshape(1, -1)),
+                        axis=0)
+                    points4d = cv2.triangulatePoints(P1, P2, ptl, ptr)
+                    for j in range(points4d.shape[1]):
+                        depth = points4d[2][j] / points4d[3][j]
+                        height = points4d[1][j] / points4d[3][j]
+                        width = points4d[0][j] / points4d[3][j]
+                        if depth > 0 and depth < 150:
+                            if max_depth < depth:
+                                max_depth = depth
+                            point4d = np.asarray([[width, height, depth, 1.0]], dtype=np.float)
+                            world_point4d = np.matmul(Tr_cam_to_world, point4d.T)
+                            world_point4d = world_point4d.squeeze()
+                            # points3d.append([points4d[0][j] / points4d[3][j], points4d[1][j] / points4d[3][j],
+                            #                  points4d[2][j] / points4d[3][j], lid])
+                            points3d.append([world_point4d[0], world_point4d[1], world_point4d[2], lid_left])
+                            # print lid+1, [xl[j], yl[j]], [xr[j], yr[j]], [points4d[0][j] / points4d[3][j], points4d[1][j] / points4d[3][j], points4d[2][j] / points4d[3][j]]
+                            # colors.append([POINT_COLORS[lid][0], POINT_COLORS[lid][1], POINT_COLORS[lid][2]])
+                    # if max_depth <= 50 and lid_left == 3 and lid_right == 3:
+                    #     lid_left = 1
+                    #     lid_right = 0
+                    #     continue
+            lid_left += 1
+            lid_right += 1
+        # pose = []
         # points3d = []
-        # colors = []
-        # max_depth = 0
-        # o = open(os.path.join(output_dir, "%.3f_det.pcd" % (left_timestamp)), "w")
-        # for lid in range(len(lines_left)):
-        #     points3d.append([0, 0, 0, lid])
-        # lid_left = lid_right = 0
-        # while lid_left < len(lines_left) and lid_right < len(lines_right):
-        #     # if len(lines_left[lid_left]) == 0 and len(lines_right[lid_right]) > 0 and lid_left == 0 and lid_right == 0:
-        #     #     lid_left += 1
-        #     #     continue
-        #
-        #     if lid_left < 4 and lid_right < 4:
-        #         line_left = lines_left[lid_left]
-        #         line_right = lines_right[lid_right]
-        #         xl = []
-        #         yl = []
-        #         xr = []
-        #         yr = []
-        #         if len(line_left) == len(line_right):
-        #             for j in range(len(line_left) - 1):
-        #                 # scale = (len(line_left) - j) / 5
-        #                 scale = 1
-        #                 point_left = line_left[j]
-        #                 point_right = line_right[j]
-        #                 point_left_temp = line_left[j + 1]
-        #                 point_right_temp = line_right[j + 1]
-        #                 if point_left[0] != -1 and point_right[0] != -1 and point_left_temp[0] != -1 and \
-        #                         point_right_temp[0] != -1:
-        #                     for i in range(scale):
-        #                         xl.append(point_left[0] + i * float(point_left_temp[0] - point_left[0]) / scale)
-        #                         yl.append(point_left[1] + i * float(point_left_temp[1] - point_left[1]) / scale)
-        #                         xr.append(point_right[0] + i * float(point_right_temp[0] - point_right[0]) / scale)
-        #                         yr.append(point_right[1] + i * float(point_right_temp[1] - point_right[1]) / scale)
-        #             if len(xl) == 0 or len(xr) == 0:
-        #                 lid_left += 1
-        #                 lid_right += 1
-        #                 continue
-        #             ptl = np.concatenate(
-        #                 (np.asarray(xl, dtype=np.float).reshape(1, -1), np.asarray(yl, dtype=np.float).reshape(1, -1)),
-        #                 axis=0)
-        #             ptr = np.concatenate(
-        #                 (np.asarray(xr, dtype=np.float).reshape(1, -1), np.asarray(yr, dtype=np.float).reshape(1, -1)),
-        #                 axis=0)
-        #             points4d = cv2.triangulatePoints(P1, P2, ptl, ptr)
-        #             for j in range(points4d.shape[1]):
-        #                 depth = points4d[2][j] / points4d[3][j]
-        #                 height = points4d[1][j] / points4d[3][j]
-        #                 width = points4d[0][j] / points4d[3][j]
-        #                 if depth > 0 and depth < 150:
-        #                     if max_depth < depth:
-        #                         max_depth = depth
-        #                     point4d = np.asarray([[width, height, depth, 1.0]], dtype=np.float)
-        #                     world_point4d = np.matmul(Tr_cam_to_world, point4d.T)
-        #                     world_point4d = world_point4d.squeeze()
-        #                     # points3d.append([points4d[0][j] / points4d[3][j], points4d[1][j] / points4d[3][j],
-        #                     #                  points4d[2][j] / points4d[3][j], lid])
-        #                     points3d.append([world_point4d[0], world_point4d[1], world_point4d[2], lid_left])
-        #                     # print lid+1, [xl[j], yl[j]], [xr[j], yr[j]], [points4d[0][j] / points4d[3][j], points4d[1][j] / points4d[3][j], points4d[2][j] / points4d[3][j]]
-        #                     # colors.append([POINT_COLORS[lid][0], POINT_COLORS[lid][1], POINT_COLORS[lid][2]])
-        #             # if max_depth <= 50 and lid_left == 3 and lid_right == 3:
-        #             #     lid_left = 1
-        #             #     lid_right = 0
-        #             #     continue
-        #     lid_left += 1
-        #     lid_right += 1
-        # # pose = []
-        # # points3d = []
+        header = """VERSION 0.7
+            FIELDS x y z intensity
+            SIZE 4 4 4 4
+            TYPE F F F F
+            COUNT 1 1 1 1
+            WIDTH %d
+            HEIGHT 1
+            VIEWPOINT 0 0 0 1 0 0 0
+            POINTS %d
+            DATA ascii
+            """ % (len(points3d)+len(pose)+len(velo), len(points3d)+len(pose)+len(velo))
+        o.writelines(header)
+        for j in range(len(points3d)):
+            o.write("%f %f %f %f\n" % (points3d[j][0], points3d[j][1], points3d[j][2], points3d[j][3]*30+30))
+        for j in range(len(pose)):
+            o.write("%f %f %f %f\n" % (pose[j][0], pose[j][1], pose[j][2], pose[j][3]))
+        for j in range(len(velo)):
+            point4d = np.asarray([[velo[j][0], velo[j][1], velo[j][2], 1.0]], dtype=np.float)
+            world_point4d = np.matmul(Tr_velo_to_world, point4d.T)
+            world_point4d = world_point4d.squeeze()
+            o.write("%f %f %f %f\n" % (world_point4d[0], world_point4d[1], world_point4d[2], velo[j][3]))
+        o.close()
+
+        # frame_points.append(points3d)
+        # if len(frame_points) > 25:
+        #     frame_points.pop(0)
+        # height= disp_left.shape[0]*2
+        # bev_image, filter_points4d = gen_bev_frame(frame_points, pose, Tr_imu_to_world, height, height)
+        # disp_merged = np.concatenate([disp_left, disp_right], axis=0)
+        # bev_image = np.concatenate([disp_merged, bev_image], axis=1)
+        # cv2.imwrite(os.path.join(output_dir, "%.3f_bev.png" % (left_timestamp)), bev_image)
+        # o = open(os.path.join(output_dir, "%.3f_filter.pcd" % (left_timestamp)), "w")
         # header = """VERSION 0.7
-        #     FIELDS x y z intensity
-        #     SIZE 4 4 4 4
-        #     TYPE F F F F
-        #     COUNT 1 1 1 1
-        #     WIDTH %d
-        #     HEIGHT 1
-        #     VIEWPOINT 0 0 0 1 0 0 0
-        #     POINTS %d
-        #     DATA ascii
-        #     """ % (len(points3d)+len(pose)+len(velo), len(points3d)+len(pose)+len(velo))
+        #             FIELDS x y z intensity
+        #             SIZE 4 4 4 4
+        #             TYPE F F F F
+        #             COUNT 1 1 1 1
+        #             WIDTH %d
+        #             HEIGHT 1
+        #             VIEWPOINT 0 0 0 1 0 0 0
+        #             POINTS %d
+        #             DATA ascii
+        #             """ % (len(filter_points4d) + len(pose), len(filter_points4d) + len(pose))
         # o.writelines(header)
-        # for j in range(len(points3d)):
-        #     o.write("%f %f %f %f\n" % (points3d[j][0], points3d[j][1], points3d[j][2], points3d[j][3]*30+30))
+        # for j in range(len(filter_points4d)):
+        #     o.write("%f %f %f %f\n" % (filter_points4d[j][0], filter_points4d[j][1], filter_points4d[j][2], filter_points4d[j][3]))
         # for j in range(len(pose)):
         #     o.write("%f %f %f %f\n" % (pose[j][0], pose[j][1], pose[j][2], pose[j][3]))
-        # for j in range(len(velo)):
-        #     point4d = np.asarray([[velo[j][0], velo[j][1], velo[j][2], 1.0]], dtype=np.float)
-        #     world_point4d = np.matmul(Tr_velo_to_world, point4d.T)
-        #     world_point4d = world_point4d.squeeze()
-        #     o.write("%f %f %f %f\n" % (world_point4d[0], world_point4d[1], world_point4d[2], velo[j][3]))
         # o.close()
-        #
-        # # frame_points.append(points3d)
-        # # if len(frame_points) > 25:
-        # #     frame_points.pop(0)
-        # # height= disp_left.shape[0]*2
-        # # bev_image, filter_points4d = gen_bev_frame(frame_points, pose, Tr_imu_to_world, height, height)
-        # # disp_merged = np.concatenate([disp_left, disp_right], axis=0)
-        # # bev_image = np.concatenate([disp_merged, bev_image], axis=1)
-        # # cv2.imwrite(os.path.join(output_dir, "%.3f_bev.png" % (left_timestamp)), bev_image)
-        # # o = open(os.path.join(output_dir, "%.3f_filter.pcd" % (left_timestamp)), "w")
-        # # header = """VERSION 0.7
-        # #             FIELDS x y z intensity
-        # #             SIZE 4 4 4 4
-        # #             TYPE F F F F
-        # #             COUNT 1 1 1 1
-        # #             WIDTH %d
-        # #             HEIGHT 1
-        # #             VIEWPOINT 0 0 0 1 0 0 0
-        # #             POINTS %d
-        # #             DATA ascii
-        # #             """ % (len(filter_points4d) + len(pose), len(filter_points4d) + len(pose))
-        # # o.writelines(header)
-        # # for j in range(len(filter_points4d)):
-        # #     o.write("%f %f %f %f\n" % (filter_points4d[j][0], filter_points4d[j][1], filter_points4d[j][2], filter_points4d[j][3]))
-        # # for j in range(len(pose)):
-        # #     o.write("%f %f %f %f\n" % (pose[j][0], pose[j][1], pose[j][2], pose[j][3]))
-        # # o.close()
-        #
-        #
-        # latency = latency_left + latency_right
-        # print("timestamp: %.3f, latency_left: %.3f s, latency_right: %.3f s, latency_tot: %.3f s, distance: %.3f m" % (float(left_timestamp), latency_left, latency_right, latency, max_depth))
-        #
+
+
+        latency = latency_left + latency_right
+        print("timestamp: %.3f, latency_left: %.3f s, latency_right: %.3f s, latency_tot: %.3f s, distance: %.3f m" % (float(left_timestamp), latency_left, latency_right, latency, max_depth))
+
 
 
         index = index + 1
@@ -565,8 +564,7 @@ def main():
             velo_topics.append(t)
             topics.append(t)
 
-    # model = load_model()
-    model=[]
+    model = load_model()
     offset = 0
     for b in args.bags.split(","):
         print("start bag", b)

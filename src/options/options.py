@@ -21,7 +21,7 @@ parser.add_argument('--start_epoch', default=0, type=int, metavar='N', help='man
 parser.add_argument('--gpus', nargs='+', type=int, default=[0])
 parser.add_argument('--save_path', type=str, default=None)
 
-# ========================= Rosbag Configs ==========================
+# ========================= Rosbag Configs ===========================
 parser.add_argument("--bags", type=str, help="path to bags (comma separated)")
 parser.add_argument("--out", type=str, help="output path (a directory)")
 parser.add_argument("--rate", type=float, help="desired sample rate in seconds", default=0.1)
@@ -31,13 +31,23 @@ parser.add_argument("--cam_topics", type=str, help="camera topics (comma separat
 parser.add_argument("--odom_topics", type=str, help="odometry topic (comma separated, don't add space between topics)")
 parser.add_argument("--frame_limit", type=int, help="frame limit if > 0", default=0)
 
-# ========================= Onnx Configs ==========================
+# ========================= Onnx Configs =============================
 parser.add_argument('--onnx_file', type=str, default='erfnet.onnx', help='name of the output onnx file')
 parser.add_argument('--onnx_optim_passes', type=str, default='fuse_bn_into_conv', help='optimization passes used by onnx;' 'should be separated by comma')
+
+# ======================== Tensorrt Configs ==========================
 parser.add_argument('--model_file', type=str, default='', help='name of the output onnx or engine file')
-parser.add_argument('--tensorrt_file', type=str, default='erfnet.engine', help='name of the output tensorrt file')
+parser.add_argument('--engine_file', type=str, default='erfnet.engine', help='name of the output engine file')
 parser.add_argument('--calib_dir', type=str, default='/media/jiangzh/zhihao-2TB/calibration_data_lane', help='name of the cache dir')
 parser.add_argument('--calib_batch', type=int, default=1, help='batch of calib')
 parser.add_argument('--cache_file', type=str, default='erfnet.calibration_cache', help='name of the cache file')
 parser.add_argument('--tensorrt_max_batch', type=int, default=1, help='max batch of tensorrt')
-parser.add_argument('--not_use_int8', type=bool, default=False, help='not use int8')
+parser.add_argument('--calibration_data_size', type=int, default=1024, help='calibration data size')
+parser.add_argument('--use_int8', type=bool, default=False, help='not use int8')
+
+# ====================== Evaluation Configs ==========================
+parser.add_argument('--in_samples', type=str, default='/home/julian/data/benchmark/lane_detection')
+parser.add_argument('--in_list', type=str, default='cn.list')
+parser.add_argument('--out_infer', type=str, default='/home/julian/data/benchmark/lane_detection/lane_detection/output')
+parser.add_argument('--out_eval', type=str, help='evaluation output folder')
+parser.add_argument('--max_pixel_dis', type=int, default=5, help='max pixel distance to match two pixels')

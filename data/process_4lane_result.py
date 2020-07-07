@@ -10,8 +10,8 @@ import sys
 
 import argparse
 parser = argparse.ArgumentParser()
-parser.add_argument('--label_list', type=str, default="/home/julian.jiang/data/FV/lane_batch/L4E/json.list", help='the labeled file list')
-parser.add_argument('--image_folder', type=str, default="/home/julian.jiang/data/FV/lane_batch/L4E/", help='the root folder of the labeled images')
+parser.add_argument('--label_list', type=str, default="/home/julian/data/lane_batch/L4E/json/json.list", help='the labeled file list')
+parser.add_argument('--image_folder', type=str, default="/home/julian/data/lane_batch/L4E/", help='the root folder of the labeled images')
 args = parser.parse_args()
 
 cls_map = {
@@ -128,7 +128,7 @@ def main():
             fpath = os.path.join(args.image_folder, task_name, 'sample', bag_name, image_name)
 
             if not os.path.exists(fpath):
-                print(fpath, obj['ids'])
+                print("%s dosen't exist."% (fpath))
                 continue
 
             outdirs = os.path.join(args.image_folder, task_name, '4lane')

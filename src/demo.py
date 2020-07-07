@@ -88,7 +88,8 @@ def infer_model(model, image):
     maps = []
     exists = []
 
-    threshold = int(cfg.THRESHOLD * 255)
+    threshold_cls = int(cfg.THRESHOLD_CLS * 255)
+    threshold_ego = int(cfg.THRESHOLD_EGO * 255)
     result_cls = np.zeros((h, w)).astype(np.uint8)
     for num in range(cfg.NUM_CLASSES-1):
         prob_map = (pred_cls[0][num + 1] * 255).astype(np.uint8)
@@ -97,7 +98,7 @@ def infer_model(model, image):
         map_bak[cfg.VERTICAL_CROP_SIZE:, :] = cv2.resize(prob_map, (cfg.LOAD_IMAGE_WIDTH, cfg.IN_IMAGE_H_AFTER_CROP),
                                                      interpolation=cv2.INTER_NEAREST)
         map_bak = cv2.resize(map_bak, (w, h), interpolation=cv2.INTER_NEAREST)
-        result_cls[map_bak >= threshold] = num + 1
+        result_cls[map_bak >= threshold_cls] = num + 1
     result_ego = np.zeros((h, w)).astype(np.uint8)
     for num in range(cfg.NUM_EGO):
         prob_map = (pred_ego[0][num + 1] * 255).astype(np.uint8)
@@ -107,7 +108,7 @@ def infer_model(model, image):
                                                      interpolation=cv2.INTER_NEAREST)
         map_bak = cv2.resize(map_bak, (w, h), interpolation=cv2.INTER_NEAREST)
         if pred_exist[0][num] > 0.5:
-            result_ego[map_bak >= threshold] = num + 1
+            result_ego[map_bak >= threshold_ego] = num + 1
         exists.append(pred_exist[0][num] > 0.7)
     lines = ptl.GetAllLines(exists, result_ego)
 
