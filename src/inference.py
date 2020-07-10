@@ -121,5 +121,12 @@ if __name__ == '__main__':
     cfg.THRESHOLD_CLS = 0.85
     cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT = 480,224
     image_file = 'src/samples/lane_detection_l4e_input.png'
+    image = cv2.imread(image_file)
+    h,w,c = image.shape
+    image_re = cv2.resize(image, (int(1.2*w), int(1.2*h)), interpolation=cv2.INTER_NEAREST)
+    image_re1 = cv2.resize(image, (int(1.2*w), int(1.2*h)), interpolation=cv2.INTER_LINEAR)
+    merged = np.concatenate([image_re, image_re1], axis=1)
+    cv2.imshow("resize", merged)
+    cv2.waitKey()
     inference(args.model_file, image_file)
     print("All Done")

@@ -86,8 +86,8 @@ def main():
             tf.GroupRandomScale(size=(0.695, 0.721),
                                 interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
             tf.GroupRandomCropRatio(size=(cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT)),
-            tf.GroupRandomRotation(degree=(-1, 1),
-                                   interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST),
+            tf.GroupRandomRotation(degree=(-5, 5),
+                                   interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST),
                                    padding=(cfg.INPUT_MEAN, (ignore_label,), (ignore_label,))),
             tf.GroupNormalize(mean=(cfg.INPUT_MEAN, (0,), (0,)), std=(cfg.INPUT_STD, (1,), (1,))),
         ])), batch_size=cfg.train_batch_size, shuffle=True, num_workers=cfg.workers, pin_memory=False, drop_last=True)

@@ -19,8 +19,6 @@ from PIL import Image
 
 best_mIoU = 0
 
-dataset_path='/home/julian.jiang/data/FV/lane_batch/L4E'
-
 def main():
     global args, best_mIoU
     args = parser.parse_args()
