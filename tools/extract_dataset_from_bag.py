@@ -2,6 +2,8 @@
 
 import sys
 import rosbag
+
+from fastbag.readers import Reader
 import math
 import numpy as np
 import sensor_msgs.point_cloud2
@@ -280,6 +282,9 @@ if __name__ == '__main__':
     for b in args.bags.split(","):
         print("start bag", b)
         sys.stdout.flush()
-        bag = rosbag.Bag(b)
+        if b.endswith('bag'):
+            bag = rosbag.Bag(b)
+        else:
+            bag = Reader(b)
         msg_it = iter(buffered_message_generator(bag, args.tolerance, topics))
         offset = msg_loop(args.out, args.rate, args.frame_limit, velo_topics, cam_topics, odom_topics, radar_topics, msg_it, args.width, args.height, offset)

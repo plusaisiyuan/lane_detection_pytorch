@@ -77,11 +77,11 @@ def create_onnx_model(args):
         output_names = ["output/ego", "output/exist"]
     torch_in = torch.randn(1, 3, cfg.MODEL_INPUT_HEIGHT, cfg.MODEL_INPUT_WIDTH, device='cuda')
 
-    from thop import profile
-    flops, params = profile(net, inputs=(torch_in,))
-    from thop import clever_format
-    macs, params = clever_format([flops, params], "%.3f")
-    print(macs, params, flops)
+    # from thop import profile
+    # flops, params = profile(net, inputs=(torch_in,))
+    # from thop import clever_format
+    # macs, params = clever_format([flops, params], "%.3f")
+    # print(macs, params, flops)
 
     with torch.no_grad():
         with io.BytesIO() as f:

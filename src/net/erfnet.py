@@ -145,7 +145,7 @@ class Lane_exist(nn.Module):
 
         self.maxpool = nn.MaxPool2d(2, stride=2)
         self.linear1 = nn.Linear(2560, 128)
-        self.linear2 = nn.Linear(128, 4)
+        self.linear2 = nn.Linear(128, num_output)
 
     def forward(self, input):
         output = input
@@ -178,7 +178,7 @@ class ERFNet(nn.Module):
         self.num_ego = num_ego
         if (encoder == None):
             # self.encoder = Encoder(num_ego+1)
-            self.encoder = Encoder(self.num_cls)
+            self.encoder = Encoder(5)
         else:
             self.encoder = encoder
         # self.decoder_cls = Decoder(num_cls)

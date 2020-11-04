@@ -1,7 +1,7 @@
 #set -x
 
-path="/media/jiangzh/zhihao-2TB/bag_road_test_J7-5_empty_load_0701"
-for bag_path in `ls $path/bag/*.bag`
+path="/media/jiangzh/zhihao-2TB/j7-e0008"
+for bag_path in `ls $path/bag/*.db`
 do
   bag=${bag_path##*/}
   out_dir="$path/result/$bag"

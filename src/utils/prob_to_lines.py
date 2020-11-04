@@ -2,7 +2,7 @@ from PIL import Image, ImageFilter
 import numpy as np
 import sys
 sys.path.append("..")
-from options.config import cfg
+from options.config  import cfg
 
 # Alternative to matlab script that converts probability maps to lines
 
@@ -97,6 +97,8 @@ def GetAllLines(existArray, prob_result):
                     XS[y] = -1
             coordinates.append(list(zip(XS, YS)))
         else:
+            # for y in range(h):
+            #     XS[y] = -1
             coordinates.append([])
     # print coordinates
     return coordinates

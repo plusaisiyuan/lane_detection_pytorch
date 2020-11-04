@@ -135,7 +135,7 @@ def main():
 
 
             if fpath.find('.bag') != -1:
-                label_img, disp_img, cls_list = process_label(lanes, fpath)
+                label_img, disp_img, cls_list = process_label(lanes, i)
                 if len(cls_list) == 0 and lanes != {}:
                     print(fpath, obj['ids'])
                 else:

@@ -119,28 +119,41 @@ def buffered_message_generator(bag, tolerance, topics, odom_topics):
                 if 'left' in topic:
                     cam_timestamp = msg_time(buf[0].message).to_sec()
                     break
-            count = 0
+            flag = 0
             for topic, buf in buffers.iteritems():
                 if topic in odom_topics:
                     for i in buf:
-                        if abs(msg_time(i.message).to_sec() - cam_timestamp) < 2 * tolerance:
-                            count += 1
-            if count < 2:
+                        if msg_time(i.message).to_sec() - cam_timestamp > 3 * tolerance:
+                            flag = 1
+            if flag == 0:
                 break
             msg_set = dict([(t, []) for t in topics])
+
             for topic, buf in buffers.iteritems():
+                pre_timestamp = cam_timestamp-0.1
+                next_timestamp = cam_timestamp+0.1
+                pre_odom = 0
+                next_odom = 0
                 if topic in odom_topics:
                     for i in buf:
                         m = i.message
                         if msg_time(m).to_sec() - cam_timestamp < 2 * tolerance and msg_time(m).to_sec() - cam_timestamp > 0:
-                            msg_set[topic].append(m)
+                            if next_timestamp > msg_time(m).to_sec():
+                                next_timestamp = msg_time(m).to_sec()
+                                next_odom = m
                         elif cam_timestamp - msg_time(m).to_sec() < 2 * tolerance and cam_timestamp - msg_time(m).to_sec() > 0:
-                            msg_set[topic].insert(0, m)
+                            if pre_timestamp < msg_time(m).to_sec():
+                                pre_timestamp = msg_time(m).to_sec()
+                                pre_odom = m
+                    msg_set[topic].append(next_odom)
+                    msg_set[topic].insert(0, pre_odom)
+                    # print(topic, len(buf), 'pre_odom', pre_odom, 'next_odom', next_odom)
                 else:
                     for i in buf:
                         m = i.message
                         msg_set[topic].append(m)
-                buf.pop(0).message
+                        # print(topic, msg_time(m).to_sec())
+                    buf.pop(0).message
             yield msg_set
     for t, c in skipcounts.iteritems():
         print("skipped %d %s messages" % (c, t))
@@ -357,17 +370,22 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
     index = 0
     for m in msg_it:
         if start_time is None:
-            start_time = msg_time(m[topics[0]][0])
+            try:
+                start_time = msg_time(m[topics[0]][0])
+            except:
+                continue
         frame_number = int(((msg_time(m[topics[0]][0]) - start_time).to_sec() + (rate / 2.0)) / rate) + offset
+        # if frame_number < 158:
+        #     continue
         if last_frame == frame_number:
             continue
         sys.stdout.flush()
 
         left_orig_image, right_orig_image, left_timestamp, right_timestamp = msg_to_png(m, cam_topics)
-        velo = msg_to_velo(m, velo_topics)
+        # velo = msg_to_velo(m, velo_topics)
         left_image, right_image, P1, P2, Tr_cam_to_imu, Tr_lidar_to_imu = unwarp(left_orig_image, right_orig_image, car_name, date)
         merged = np.concatenate([left_image, right_image], axis=1)
-        cv2.imwrite(os.path.join(output_dir, "%.3f_unwarp.png" % (left_timestamp)), merged)
+        # cv2.imwrite(os.path.join(output_dir, "%.3f_unwarp.png" % (left_timestamp)), merged)
 
         result_cls_left, result_ego_left, disp_left, lines_left, latency_left = infer_model(model, left_image)
         result_cls_right, result_ego_right, disp_right, lines_right, latency_right = infer_model(model, right_image)
@@ -382,11 +400,11 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
                 if result_cls_left[i, j] != 0:
                     result_cls_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_left[i, j]-1]
                 if result_cls_right[i, j] != 0:
-                    result_cls_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_right[i, j]]
+                    result_cls_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_cls_right[i, j]-1]
                 if result_ego_left[i, j] != 0:
-                    result_ego_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_left[i, j]]
+                    result_ego_left_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_left[i, j]-1]
                 if result_ego_right[i, j] != 0:
-                    result_ego_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_right[i, j]]
+                    result_ego_right_color[i, j, :] = cfg.EG0_POINT_COLORS[result_ego_right[i, j]-1]
 
         result_cls_merged = np.concatenate([result_cls_left, result_cls_right], axis=1)
         result_ego_merged = np.concatenate([result_ego_left, result_ego_right], axis=1)
@@ -394,9 +412,9 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
         result_ego_color_merged = np.concatenate([result_ego_left_color, result_ego_right_color], axis=1)
         disp_merged = np.concatenate([disp_left, disp_right], axis=1)
 
-        cv2.imwrite(os.path.join(output_dir, "%.3f_cls.png" % (left_timestamp)), result_cls_color_merged * 0.5 + merged * 0.5)
-        cv2.imwrite(os.path.join(output_dir, "%.3f_ego.png" % (left_timestamp)), result_ego_color_merged * 0.5 + merged * 0.5)
-        cv2.imwrite(os.path.join(output_dir, "%.3f_points.png" % (left_timestamp)), disp_merged)
+        # cv2.imwrite(os.path.join(output_dir, "%.3f_cls.png" % (left_timestamp)), result_cls_color_merged * 0.5 + merged * 0.5)
+        cv2.imwrite(os.path.join(output_dir, "stereo_%.3f_ego.png" % (left_timestamp)), result_ego_color_merged * 0.5 + merged * 0.5)
+        cv2.imwrite(os.path.join(output_dir, "stereo_%.3f_points.png" % (left_timestamp)), disp_merged)
         Tr_imu_to_world, pose = msg_to_odom(m, odom_topics, left_timestamp)
         Tr_cam_to_world = np.matmul(Tr_imu_to_world, Tr_cam_to_imu)
         Tr_velo_to_world = np.matmul(Tr_imu_to_world, Tr_lidar_to_imu)
@@ -404,7 +422,7 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
         points3d = []
         colors = []
         max_depth = 0
-        o = open(os.path.join(output_dir, "%.3f_det.pcd" % (left_timestamp)), "w")
+        o = open(os.path.join(output_dir, "stereo_%.3f_det.pcd" % (left_timestamp)), "w")
         for lid in range(len(lines_left)):
             points3d.append([0, 0, 0, lid])
         lid_left = lid_right = 0
@@ -469,6 +487,7 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
             lid_right += 1
         # pose = []
         # points3d = []
+        velo = []
         header = """VERSION 0.7
             FIELDS x y z intensity
             SIZE 4 4 4 4
@@ -537,9 +556,6 @@ def msg_loop(output_dir, rate, frame_limit, topics, velo_topics, cam_topics,
 def main():
     global args
     args = parser.parse_args()
-    cfg.NUM_CLASSES = 3
-    cfg.INPUT_MEAN = [103.939, 116.779, 123.68]
-    cfg.INPUT_STD = [1., 1., 1.]
 
     if not os.path.isdir(args.out):
         os.mkdir(args.out)
@@ -563,7 +579,8 @@ def main():
         for t in args.velo_topics.split(","):
             velo_topics.append(t)
             topics.append(t)
-
+    import json
+    print(json.dumps(cfg, sort_keys=True, indent=2))
     model = load_model()
     offset = 0
     for b in args.bags.split(","):

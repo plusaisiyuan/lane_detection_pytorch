@@ -6,6 +6,7 @@ import torchvision
 import torch.nn.parallel
 import torch.backends.cudnn as cudnn
 import torch.optim
+import torch.nn as nn
 import cv2
 from tensorboardX import SummaryWriter
 import numpy as np
@@ -15,6 +16,7 @@ import dataset as ds
 import utils.transforms as tf
 from options.options import parser
 from options.config import cfg
+import json
 
 best_mIoU_cls = 0
 best_mIoU_ego = 0
@@ -45,37 +47,62 @@ def main():
         num_ego = cfg.NUM_EGO
         num_class = cfg.NUM_CLASSES
         ignore_label = 255
+
+    print(json.dumps(cfg, sort_keys=True, indent=2))
     model = net.ERFNet(num_class, num_ego)
     model = torch.nn.DataParallel(model, device_ids=range(len(cfg.gpus))).cuda()
 
     if num_class:
-        print(("=> train'{}' model".format('lane_cls')))
+        print(("=> train '{}' model".format('lane_cls')))
     if num_ego:
-        print(("=> train'{}' model".format('lane_ego')))
+        print(("=> train '{}' model".format('lane_ego')))
 
-    def load_my_state_dict(model, state_dict):  # custom function to load model when not all dict elements
-        own_state = model.state_dict()
-        ckpt_name = []
-        cnt = 0
-        for name, param in state_dict.items():
-            if name not in list(own_state.keys()) or 'output_conv' in name:
-                 ckpt_name.append(name)
-                 continue
-            own_state[name].copy_(param)
-            cnt += 1
-        print('#reused param: {}'.format(cnt))
-        return model
+    if cfg.optimizer == 'sgd':
+        optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
+    else:
+        optimizer = torch.optim.Adam(model.parameters(), cfg.lr, weight_decay=cfg.weight_decay)
 
+    resume_epoch = 0
     if cfg.resume:
         if os.path.isfile(cfg.resume):
             print(("=> loading checkpoint '{}'".format(cfg.resume)))
             checkpoint = torch.load(cfg.resume)
-            cfg.start_epoch = checkpoint['epoch']
-            model = load_my_state_dict(model, checkpoint['state_dict'])
-            # torch.nn.Module.load_state_dict(model, checkpoint['state_dict'])
-            print(("=> loaded checkpoint '{}' (epoch {})".format(cfg.evaluate, checkpoint['epoch'])))
+            if cfg.finetune:
+                print('finetune from ', cfg.resume)
+                state_all = checkpoint['state_dict']
+                state_clip = {}  # only use backbone parameters
+                for k, v in state_all.items():
+                    if 'module' in k:
+                        state_clip[k] = v
+                        print(k)
+                model.load_state_dict(state_clip, strict=False)
+            else:
+                print('==> Resume model from ' + cfg.resume)
+                model.load_state_dict(checkpoint['state_dict'])
+                if 'optimizer' in checkpoint.keys():
+                    optimizer.load_state_dict(checkpoint['optimizer'])
+                if 'epoch' in checkpoint.keys():
+                    resume_epoch = int(checkpoint['epoch']) + 1
         else:
             print(("=> no checkpoint found at '{}'".format(cfg.resume)))
+            model.apply(weights_init)
+    else:
+        model.apply(weights_init)
+
+
+    # if cfg.resume:
+    #     if os.path.isfile(cfg.resume):
+    #         print(("=> loading checkpoint '{}'".format(cfg.resume)))
+    #         checkpoint = torch.load(cfg.resume)
+    #         cfg.start_epoch = checkpoint['epoch']
+    #         # model = load_my_state_dict(model, checkpoint['state_dict'])
+    #         torch.nn.Module.load_state_dict(model, checkpoint['state_dict'])
+    #         print(("=> loaded checkpoint '{}' (epoch {})".format(cfg.evaluate, checkpoint['epoch'])))
+    #     else:
+    #         print(("=> no checkpoint found at '{}'".format(cfg.resume)))
+    #         model.apply(weights_init)
+    # else:
+    #     model.apply(weights_init)
 
     cudnn.benchmark = True
     cudnn.fastest = True
@@ -84,21 +111,21 @@ def main():
     train_loader = torch.utils.data.DataLoader(
         getattr(ds, 'VOCAugDataSet')(dataset_path=cfg.dataset_path, data_list=cfg.train_list, transform=torchvision.transforms.Compose([
             tf.GroupRandomScale(size=(0.695, 0.721),
-                                interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
+                                interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
             tf.GroupRandomCropRatio(size=(cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT)),
-            tf.GroupRandomRotation(degree=(-5, 5),
-                                   interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST),
+            tf.GroupRandomRotation(degree=(-1, 1),
+                                   interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST),
                                    padding=(cfg.INPUT_MEAN, (ignore_label,), (ignore_label,))),
             tf.GroupNormalize(mean=(cfg.INPUT_MEAN, (0,), (0,)), std=(cfg.INPUT_STD, (1,), (1,))),
-        ])), batch_size=cfg.train_batch_size, shuffle=True, num_workers=cfg.workers, pin_memory=False, drop_last=True)
+        ])), batch_size=cfg.train_batch_size, shuffle=True, num_workers=cfg.workers, pin_memory=True, drop_last=True)
 
     val_loader = torch.utils.data.DataLoader(
         getattr(ds, 'VOCAugDataSet')(dataset_path=cfg.dataset_path, data_list=cfg.val_list, transform=torchvision.transforms.Compose([
             tf.GroupRandomScale(size=(0.695, 0.721),
-                                interpolation=(cv2.INTER_NEAREST, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
+                                interpolation=(cv2.INTER_LINEAR, cv2.INTER_NEAREST, cv2.INTER_NEAREST)),
             tf.GroupRandomCropRatio(size=(cfg.MODEL_INPUT_WIDTH, cfg.MODEL_INPUT_HEIGHT)),
             tf.GroupNormalize(mean=(cfg.INPUT_MEAN, (0,), (0,)), std=(cfg.INPUT_STD, (1,), (1,))),
-        ])), batch_size=cfg.val_batch_size, shuffle=False, num_workers=args.workers, pin_memory=False)
+        ])), batch_size=cfg.val_batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     # define loss function (criterion) optimizer and evaluator
     class_weights = torch.FloatTensor(cfg.CLASS_WEIGHT).cuda()
@@ -108,7 +135,13 @@ def main():
     criterion_cls = torch.nn.NLLLoss(ignore_index=ignore_label, weight=class_weights).cuda()
     criterion_ego = torch.nn.NLLLoss(ignore_index=ignore_label, weight=ego_weights).cuda()
     criterion_exist = torch.nn.BCELoss().cuda()
-    optimizer = torch.optim.SGD(model.parameters(), cfg.lr, momentum=cfg.momentum, weight_decay=cfg.weight_decay)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    reg_loss = None
+    if cfg.weight_decay > 0 and cfg.use_L1:
+        reg_loss = Regularization(model, cfg.weight_decay, p=1).to(device)
+    else:
+        print("no regularization")
+
     if num_class:
         evaluator = EvalSegmentation(num_class, ignore_label)
     if num_ego:
@@ -120,10 +153,12 @@ def main():
     writer = SummaryWriter(os.path.join(cfg.save_path, 'Tensorboard'))
 
     for epoch in range(cfg.epochs):  # args.start_epoch
+        if epoch < resume_epoch:
+            continue
         adjust_learning_rate(optimizer, epoch, cfg.lr_steps)
 
         # train for one epoch
-        train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, optimizer, epoch, writer)
+        train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, optimizer, epoch, writer, reg_loss)
 
         # evaluate on validation set
         if (epoch + 1) % cfg.eval_freq == 0 or epoch == cfg.epochs - 1:
@@ -145,9 +180,10 @@ def main():
 
     writer.close()
 
-def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, optimizer, epoch, writer=None):
+def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, optimizer, epoch, writer=None, reg_loss=None):
     batch_time = AverageMeter()
     data_time = AverageMeter()
+    losses_reg = AverageMeter()
     losses_cls = AverageMeter()
     losses_ego = AverageMeter()
     losses_exist = AverageMeter()
@@ -157,6 +193,7 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
 
     end = time.time()
 
+    loss_reg_avg = 0
     loss_cls_avg = 0
     loss_ego_avg = 0
     loss_exist_avg = 0
@@ -175,6 +212,12 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
             output_ego, output_exist = model(input_var) # output_mid
 
         loss_tot = 0
+        if cfg.weight_decay > 0 and cfg.use_L1:
+            loss_reg = reg_loss(model)
+            loss_tot += loss_reg
+            loss_reg_avg += loss_reg.data.item()
+            # measure accuracy and record loss
+            losses_reg.update(loss_reg.data.item(), input.size(0))
         if cfg.NUM_CLASSES:
             target_cls = target_cls.cuda()
             target_cls_var = torch.autograd.Variable(target_cls)
@@ -191,7 +234,7 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
             target_exist_var = torch.autograd.Variable(target_exist)
             loss_ego = criterion_ego(torch.log(output_ego), target_ego_var)
             loss_exist = criterion_exist(output_exist, target_exist_var)
-            loss_tot += loss_ego + loss_exist * 0.1
+            loss_tot += loss_ego + loss_exist * cfg.factor
 
             loss_ego_avg += loss_ego.data.item()
             loss_exist_avg += loss_exist.item()
@@ -212,29 +255,41 @@ def train(train_loader, model, criterion_cls, criterion_ego, criterion_exist, op
         if (i + 1) % cfg.print_freq == 0:
             if cfg.NUM_CLASSES and cfg.NUM_EGO:
                 print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 
+                       # 'Loss_reg {loss_reg.val:.4f} ({loss_reg.avg:.4f})\t'
+                       'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
                        'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Loss_exist {loss_exist.val:.4f} ({loss_exist.avg:.4f})\t'
                        .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time,
+                               # loss_reg=losses_reg,
                                loss_cls=losses_cls, loss_ego=losses_ego,
                                loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
             if cfg.NUM_CLASSES and cfg.NUM_EGO == 0:
                 print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 
+                       # 'Loss_reg {loss_reg.val:.4f} ({loss_reg.avg:.4f})\t' 
+                       'Loss_cls {loss_cls.val:.4f} ({loss_cls.avg:.4f})\t'
                        .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time,
+                               # loss_reg=losses_reg,
                                loss_cls=losses_cls, lr=optimizer.param_groups[-1]['lr'])))
             if cfg.NUM_CLASSES == 0 and cfg.NUM_EGO:
                 output_ego, output_exist = model(input_var)  # output_mid
                 print(('Epoch: [{0}][{1}/{2}], lr: {lr:.5f}\t' 'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t' 
-                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'  
+                       'Data {data_time.val:.3f} ({data_time.avg:.3f})\t' 
+                       # 'Loss_reg {loss_reg.val:.4f} ({loss_reg.avg:.4f})\t' 
                        'Loss_ego {loss_ego.val:.4f} ({loss_ego.avg:.4f})\t' 'Loss_exist {loss_exist.val:.4f} ({loss_exist.avg:.4f})\t'
-                    .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time, loss_ego=losses_ego,
-                            loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
+                       .format(epoch, i, len(train_loader), batch_time=batch_time, data_time=data_time,
+                               # loss_reg=losses_reg,
+                               loss_ego=losses_ego, loss_exist=losses_exist, lr=optimizer.param_groups[-1]['lr'])))
             batch_time.reset()
             data_time.reset()
+            if cfg.weight_decay > 0 and cfg.use_L1:
+                losses_reg.reset()
             losses_cls.reset()
             losses_ego.reset()
             losses_exist.reset()
 
+    if cfg.weight_decay > 0 and cfg.use_L1:
+        writer.add_scalars('Loss_reg', {'Training': loss_reg_avg / len(train_loader)}, epoch)
     if cfg.NUM_CLASSES:
         writer.add_scalars('Loss_cls', {'Training': loss_cls_avg / len(train_loader)}, epoch)
     if cfg.NUM_EGO:
@@ -303,14 +358,11 @@ def validate(val_loader, model, criterion_cls, criterion_ego, criterion_exist, i
             losses_ego.update(loss_ego.data.item(), input.size(0))
             loss_ego_avg += loss_ego.data.item()
             loss_exist_avg += loss_exist.item()
-            loss_tot_avg += lloss_ego.data.item() + loss_exist.item() * 0.1
+            loss_tot_avg += loss_ego.data.item() + loss_exist.item() * cfg.factor
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-
-
-
 
         if (i + 1) % cfg.print_freq == 0:
             if cfg.NUM_CLASSES:
@@ -380,7 +432,6 @@ def validate(val_loader, model, criterion_cls, criterion_ego, criterion_exist, i
 
     return mIoU_cls, mIoU_ego
 
-
 def save_checkpoint(state, is_best, filename='checkpoint.pth.tar'):
     save_path = 'trained/' + time.strftime("%Y%m%d%H%M%S", time.localtime(start))
     if not os.path.exists(save_path):
@@ -434,6 +485,7 @@ class EvalSegmentation(object):
 def adjust_learning_rate(optimizer, epoch, lr_steps):
 
     decay = ((1 - float(epoch) / cfg.epochs)**(0.9))
+    # decay = 0.9 ** epoch
     # if decay < 1e-1:
     #     """Sets the learning rate to the initial LR decayed by 10 every 30 epochs"""
     # decay = 0.1**(sum(epoch >= np.array(lr_steps)))
@@ -444,6 +496,90 @@ def adjust_learning_rate(optimizer, epoch, lr_steps):
         param_group['lr'] = lr 
         param_group['weight_decay'] = decay
 
+class Regularization(torch.nn.Module):
+    def __init__(self, model, weight_decay, p=2):
+        '''
+        :param model: train model
+        :param weight_decay: regularization params
+        :param p:  when p = 0 is L2 regularization, p = 1 is L1 regularization
+        '''
+        super(Regularization, self).__init__()
+        if weight_decay <= 0:
+            print("param weight_decay can not <=0")
+            exit(0)
+        self.model = model
+        self.weight_decay = weight_decay
+        self.p = p
+        self.weight_list = self.get_weight(model)
+        self.weight_info(self.weight_list)
+
+    def to(self, device):
+        '''
+        :param device: cuda or cpu
+        :return:
+        '''
+        self.device = device
+        super().to(device)
+        return self
+
+    def forward(self, model):
+        self.weight_list = self.get_weight(model)
+        reg_loss = self.regularization_loss(self.weight_list, self.weight_decay, p=self.p)
+        return reg_loss
+
+    def get_weight(self, model):
+        '''
+        :param model:
+        :return:
+        '''
+        weight_list = []
+        for name, param in model.named_parameters():
+            if 'weight' in name:
+                weight = (name, param)
+                weight_list.append(weight)
+        return weight_list
+
+    def regularization_loss(self, weight_list, weight_decay, p=2):
+        '''
+        :param weight_list:
+        :param p:
+        :param weight_decay:
+        :return:
+        '''
+        # weight_decay=Variable(torch.FloatTensor([weight_decay]).to(self.device),requires_grad=True)
+        # reg_loss=Variable(torch.FloatTensor([0.]).to(self.device),requires_grad=True)
+        # weight_decay=torch.FloatTensor([weight_decay]).to(self.device)
+        # reg_loss=torch.FloatTensor([0.]).to(self.device)
+        reg_loss = 0
+        for name, w in weight_list:
+            l2_reg = torch.norm(w, p=p)
+            reg_loss = reg_loss + l2_reg
+
+        reg_loss = weight_decay*reg_loss
+        return reg_loss
+
+    def weight_info(self, weight_list):
+        '''
+        :param weight_list:
+        :return:
+        '''
+        print("---------------regularization weight---------------")
+        for name, w in weight_list:
+            print(name)
+        print("---------------------------------------------------")
+
+def weights_init(m):
+    classname = m.__class__.__name__
+    # print(classname)
+    if classname.find('Conv2d') != -1:
+        nn.init.xavier_normal_(m.weight.data)
+        try:
+            nn.init.constant_(m.bias.data, 0.0)
+        except:
+            print(m.__class__.__name__)
+    elif classname.find('Linear') != -1:
+        nn.init.xavier_normal_(m.weight.data)
+        nn.init.constant_(m.bias.data, 0.0)
 
 if __name__ == '__main__':
     main()
